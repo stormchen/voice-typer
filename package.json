@@ -1,6 +1,6 @@
 {
   "name": "voice-typer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "繁體中文語音輸入桌面應用（VibeVoice-ASR 遠端 vLLM 後端）",
   "main": "src/main.js",
   "homepage": "./",
