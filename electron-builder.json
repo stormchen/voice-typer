@@ -1,7 +1,7 @@
 {
   "appId": "com.voicetyper.app",
   "productName": "VoiceTyper",
-  "artifactName": "${productName}-${version}-${os}-${arch}-${target}.${ext}",
+  "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
   "publish": {
     "provider": "github",
     "owner": "stormchen",
@@ -31,7 +31,11 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "VoiceTyper"
+    "shortcutName": "VoiceTyper",
+    "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
+  },
+  "portable": {
+    "artifactName": "${productName}-${version}-win-${arch}-portable.${ext}"
   },
   "linux": {
     "target": ["AppImage"],
