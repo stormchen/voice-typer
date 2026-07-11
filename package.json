@@ -1,6 +1,6 @@
 {
   "name": "voice-typer",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "繁體中文語音輸入桌面應用（VibeVoice-ASR 遠端 vLLM 後端）",
   "main": "src/main.js",
   "homepage": "./",
@@ -11,29 +11,17 @@
     "form-data": "^4.0.0"
   },
   "devDependencies": {
-    "electron": "^30.0.0",
+    "electron": "^30.5.1",
     "electron-builder": "^24.13.0"
   },
   "scripts": {
     "start": "electron .",
+    "icon": "node scripts/generate-icon.js",
+    "prebuild": "node scripts/generate-icon.js",
     "build": "electron-builder",
+    "prebuild:mac": "node scripts/generate-icon.js",
     "build:mac": "electron-builder --mac",
+    "prebuild:win": "node scripts/generate-icon.js",
     "build:win": "electron-builder --win"
-  },
-  "build": {
-    "appId": "com.voicetyper.app",
-    "productName": "VoiceTyper",
-    "files": [
-      "src/**/*",
-      "public/**/*",
-      "assets/**/*"
-    ],
-    "mac": {
-      "target": "dmg",
-      "category": "public.app-category.utilities"
-    },
-    "win": {
-      "target": "nsis"
-    }
   }
 }

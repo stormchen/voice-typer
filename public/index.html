@@ -10,7 +10,7 @@
   <div class="container">
     <div class="header">
       <h1>🎤 VoiceTyper</h1>
-      <p>快捷鍵: Cmd/Ctrl + Shift + V（按一次開始，再按一次結束）</p>
+      <p id="hotkey-hint">快捷鍵: Ctrl+Shift+V（按一次開始，再按一次結束）</p>
     </div>
 
     <div class="status-area">
@@ -22,6 +22,14 @@
 
     <div class="result-area">
       <div id="result-text" class="result-text">辨識結果將顯示在這裡</div>
+    </div>
+
+    <div class="history-header">
+      <span>歷史記錄（點擊複製）</span>
+      <button id="clear-history-btn" class="btn-link">清除</button>
+    </div>
+    <div id="history-list" class="history-list">
+      <div class="history-empty">尚無記錄</div>
     </div>
 
     <button id="settings-btn" class="btn-settings">⚙️ 設定</button>

@@ -1,14 +1,36 @@
 {
   "appId": "com.voicetyper.app",
   "productName": "VoiceTyper",
+  "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
   "directories": {
-    "buildResources": "assets"
+    "buildResources": "assets",
+    "output": "dist"
   },
+  "files": [
+    "src/**/*",
+    "public/**/*",
+    "assets/**/*",
+    "package.json"
+  ],
   "mac": {
     "target": ["dmg"],
-    "category": "public.app-category.utilities"
+    "category": "public.app-category.utilities",
+    "icon": "assets/icon.png"
   },
   "win": {
-    "target": ["nsis", "portable"]
+    "target": ["nsis", "portable"],
+    "icon": "assets/icon.png"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "VoiceTyper"
+  },
+  "linux": {
+    "target": ["AppImage"],
+    "category": "Utility",
+    "icon": "assets/icon.png"
   }
 }

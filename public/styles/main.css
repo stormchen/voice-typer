@@ -88,6 +88,63 @@ body {
   color: #cdd6f4;
 }
 
+/* ===== 歷史記錄 ===== */
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #a6adc8;
+}
+
+.history-list {
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-item {
+  background: #313244;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s;
+}
+
+.history-item:hover {
+  background: #45475a;
+}
+
+.history-item.copied {
+  background: #a6e3a1;
+  color: #1e1e2e;
+}
+
+.history-empty {
+  color: #6c7086;
+  font-size: 12px;
+  text-align: center;
+  padding: 10px;
+}
+
+.btn-link {
+  background: none;
+  color: #89b4fa;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
 /* ===== 按鈕 ===== */
 button {
   border: none;
@@ -183,4 +240,30 @@ button {
 
 .connection-result.fail {
   color: #f38ba8;
+}
+
+.save-result.success {
+  color: #a6e3a1;
+}
+
+.save-result.fail {
+  color: #f9e2af;
+}
+
+.hint {
+  font-size: 11px;
+  color: #6c7086;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #cdd6f4;
+  font-size: 14px;
+}
+
+.checkbox-group input[type='checkbox'] {
+  accent-color: #89b4fa;
 }

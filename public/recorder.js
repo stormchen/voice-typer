@@ -47,10 +47,15 @@ class WebAudioRecorder {
 
     const inputRate = this.audioContext.sampleRate;
 
-    this.source.disconnect();
-    this.processor.disconnect();
-    this.stream.getTracks().forEach((t) => t.stop());
-    await this.audioContext.close();
+    // 逐項清理，任一失敗不影響後續資源釋放
+    try { this.source.disconnect(); } catch (_) {}
+    try { this.processor.disconnect(); } catch (_) {}
+    try { this.stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+    try { await this.audioContext.close(); } catch (_) {}
+    this.source = null;
+    this.processor = null;
+    this.stream = null;
+    this.audioContext = null;
 
     // 合併所有音頻塊
     const totalLength = this.chunks.reduce((sum, c) => sum + c.length, 0);

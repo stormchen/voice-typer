@@ -1,22 +1,50 @@
-// IPC 安全介面（contextIsolation）
+// IPC 安全介面（contextIsolation + channel 白名單）
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 僅允許已知 channel，避免渲染進程存取任意 IPC
+const SEND_CHANNELS = ['audio-captured', 'audio-error', 'open-settings'];
+const RECEIVE_CHANNELS = [
+  'start-recording',
+  'stop-recording',
+  'recording-started',
+  'recognizing',
+  'recognition-complete',
+  'recording-limit',
+  'history-updated',
+  'error'
+];
+const INVOKE_CHANNELS = [
+  'get-settings',
+  'save-settings',
+  'test-connection',
+  'get-history',
+  'clear-history',
+  'copy-text'
+];
+
 contextBridge.exposeInMainWorld('api', {
-  // 發送事件到主進程
   send: (channel, data) => {
-    ipcRenderer.send(channel, data);
+    if (SEND_CHANNELS.includes(channel)) {
+      ipcRenderer.send(channel, data);
+    }
   },
 
-  // 接收主進程事件
   receive: (channel, func) => {
-    ipcRenderer.on(channel, (event, ...args) => func(...args));
+    if (RECEIVE_CHANNELS.includes(channel)) {
+      ipcRenderer.on(channel, (event, ...args) => func(...args));
+    }
   },
 
-  // 一次性接收
   once: (channel, func) => {
-    ipcRenderer.once(channel, (event, ...args) => func(...args));
+    if (RECEIVE_CHANNELS.includes(channel)) {
+      ipcRenderer.once(channel, (event, ...args) => func(...args));
+    }
   },
 
-  // 請求/回應模式（invoke/handle）
-  invoke: (channel, data) => ipcRenderer.invoke(channel, data)
+  invoke: (channel, data) => {
+    if (INVOKE_CHANNELS.includes(channel)) {
+      return ipcRenderer.invoke(channel, data);
+    }
+    return Promise.reject(new Error('未授權的 IPC channel: ' + channel));
+  }
 });

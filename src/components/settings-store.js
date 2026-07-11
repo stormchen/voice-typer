@@ -10,7 +10,9 @@ const DEFAULTS = {
   model: 'vibevoice-asr',
   language: 'zh-TW',
   hotkey: 'CommandOrControl+Shift+V',
-  recordMode: 'toggle' // 'toggle' | 'push-to-talk'
+  pasteMode: 'ctrl-v',      // 'ctrl-v' | 'shift-insert' | 'copy-only'
+  maxRecordSeconds: 120,    // 錄音時長上限（秒）
+  launchAtLogin: false      // 開機自動啟動
 };
 
 class SettingsStore {
