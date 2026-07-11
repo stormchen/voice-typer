@@ -2,6 +2,11 @@
   "appId": "com.voicetyper.app",
   "productName": "VoiceTyper",
   "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+  "publish": {
+    "provider": "github",
+    "owner": "stormchen",
+    "repo": "voice-typer"
+  },
   "directories": {
     "buildResources": "assets",
     "output": "dist"
