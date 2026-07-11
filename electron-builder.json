@@ -5,7 +5,8 @@
   "publish": {
     "provider": "github",
     "owner": "stormchen",
-    "repo": "voice-typer"
+    "repo": "voice-typer",
+    "releaseType": "release"
   },
   "directories": {
     "buildResources": "assets",
