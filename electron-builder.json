@@ -1,7 +1,7 @@
 {
   "appId": "com.voicetyper.app",
   "productName": "VoiceTyper",
-  "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+  "artifactName": "${productName}-${version}-${os}-${arch}-${target}.${ext}",
   "publish": {
     "provider": "github",
     "owner": "stormchen",
