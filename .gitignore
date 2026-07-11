@@ -1,0 +1,23 @@
+# 依賴
+node_modules/
+
+# 打包輸出
+dist/
+build/
+out/
+
+# 日誌
+*.log
+logs/
+
+# 環境設定
+.env
+.env.local
+
+# 系統檔案
+.DS_Store
+Thumbs.db
+
+# 編輯器
+.vscode/
+.idea/

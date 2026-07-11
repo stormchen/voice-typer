@@ -1,0 +1,14 @@
+{
+  "appId": "com.voicetyper.app",
+  "productName": "VoiceTyper",
+  "directories": {
+    "buildResources": "assets"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "category": "public.app-category.utilities"
+  },
+  "win": {
+    "target": ["nsis", "portable"]
+  }
+}

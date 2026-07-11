@@ -1,0 +1,186 @@
+/* VoiceTyper 主樣式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei',
+    'Noto Sans TC', sans-serif;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  font-size: 14px;
+}
+
+.container {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100vh;
+}
+
+.header h1 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.header p {
+  color: #a6adc8;
+  font-size: 12px;
+}
+
+/* ===== 狀態顯示 ===== */
+.status-area {
+  display: flex;
+  justify-content: center;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: #313244;
+}
+
+.status .indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6c7086;
+}
+
+.status.recording .indicator {
+  background: #f38ba8;
+  animation: pulse 1s infinite;
+}
+
+.status.recognizing .indicator {
+  background: #f9e2af;
+  animation: pulse 0.6s infinite;
+}
+
+.status.error .indicator {
+  background: #f38ba8;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ===== 辨識結果 ===== */
+.result-area {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.result-text {
+  background: #313244;
+  border-radius: 8px;
+  padding: 14px;
+  min-height: 120px;
+  line-height: 1.6;
+  word-break: break-word;
+  color: #cdd6f4;
+}
+
+/* ===== 按鈕 ===== */
+button {
+  border: none;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-settings {
+  background: #45475a;
+  color: #cdd6f4;
+}
+
+.btn-settings:hover {
+  background: #585b70;
+}
+
+.btn-save {
+  background: #89b4fa;
+  color: #1e1e2e;
+  font-weight: 600;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.btn-save:hover {
+  background: #74c7ec;
+}
+
+.btn-test {
+  background: #45475a;
+  color: #cdd6f4;
+  margin-top: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.btn-test:hover {
+  background: #585b70;
+}
+
+/* ===== 設定面板 ===== */
+.settings-container {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-container h2 {
+  margin-bottom: 6px;
+}
+
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setting-group label {
+  font-size: 13px;
+  color: #a6adc8;
+}
+
+.setting-group input,
+.setting-group select {
+  background: #313244;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #cdd6f4;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.setting-group input:focus,
+.setting-group select:focus {
+  outline: none;
+  border-color: #89b4fa;
+}
+
+.connection-result,
+.save-result {
+  font-size: 12px;
+  min-height: 16px;
+}
+
+.connection-result.success {
+  color: #a6e3a1;
+}
+
+.connection-result.fail {
+  color: #f38ba8;
+}

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>VoiceTyper 設定</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <div class="settings-container">
+    <h2>⚙️ 設定</h2>
+
+    <div class="setting-group">
+      <label>後端選擇:</label>
+      <select id="backend">
+        <option value="vllm">vLLM (VibeVoice-ASR)</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <label>vLLM 伺服器地址:</label>
+      <input type="text" id="apiUrl" placeholder="http://localhost:8000">
+      <button id="test-connection" class="btn-test">測試連接</button>
+      <div id="connection-result" class="connection-result"></div>
+    </div>
+
+    <div class="setting-group">
+      <label>模型名稱:</label>
+      <input type="text" id="model" placeholder="vibevoice-asr">
+    </div>
+
+    <div class="setting-group">
+      <label>API Key（選填）:</label>
+      <input type="password" id="apiKey" placeholder="伺服器需要驗證時填寫">
+    </div>
+
+    <div class="setting-group">
+      <label>語言:</label>
+      <select id="language">
+        <option value="zh-TW">繁體中文 (zh-TW)</option>
+        <option value="zh">中文 (zh)</option>
+        <option value="en">英文 (en)</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <label>快捷鍵:</label>
+      <select id="hotkey">
+        <option value="CommandOrControl+Shift+V">Cmd/Ctrl + Shift + V</option>
+        <option value="CommandOrControl+Shift+R">Cmd/Ctrl + Shift + R</option>
+        <option value="CommandOrControl+Shift+Space">Cmd/Ctrl + Shift + Space</option>
+      </select>
+    </div>
+
+    <button id="save-btn" class="btn-save">儲存設定</button>
+    <div id="save-result" class="save-result"></div>
+  </div>
+
+  <script>
+    // 載入現有設定
+    window.api.invoke('get-settings').then((settings) => {
+      document.getElementById('backend').value = settings.backend || 'vllm';
+      document.getElementById('apiUrl').value = settings.apiUrl || 'http://localhost:8000';
+      document.getElementById('model').value = settings.model || 'vibevoice-asr';
+      document.getElementById('apiKey').value = settings.apiKey || '';
+      document.getElementById('language').value = settings.language || 'zh-TW';
+      document.getElementById('hotkey').value = settings.hotkey || 'CommandOrControl+Shift+V';
+    });
+
+    // 測試連接（透過主進程執行，避免 CORS）
+    document.getElementById('test-connection').addEventListener('click', async () => {
+      const url = document.getElementById('apiUrl').value.replace(/\/+$/, '');
+      const resultEl = document.getElementById('connection-result');
+      resultEl.textContent = '測試中...';
+      resultEl.className = 'connection-result';
+
+      const result = await window.api.invoke('test-connection', url);
+      if (result.ok) {
+        resultEl.textContent = '✅ 連接成功! 可用模型: ' + result.models.join(', ');
+        resultEl.className = 'connection-result success';
+      } else {
+        resultEl.textContent = '❌ 連接失敗: ' + result.message;
+        resultEl.className = 'connection-result fail';
+      }
+    });
+
+    // 儲存設定
+    document.getElementById('save-btn').addEventListener('click', () => {
+      const settings = {
+        backend: document.getElementById('backend').value,
+        apiUrl: document.getElementById('apiUrl').value.replace(/\/+$/, ''),
+        model: document.getElementById('model').value,
+        apiKey: document.getElementById('apiKey').value,
+        language: document.getElementById('language').value,
+        hotkey: document.getElementById('hotkey').value
+      };
+      window.api.send('save-settings', settings);
+
+      const saveResult = document.getElementById('save-result');
+      saveResult.textContent = '✅ 設定已儲存';
+      setTimeout(() => (saveResult.textContent = ''), 2000);
+    });
+  </script>
+</body>
+</html>

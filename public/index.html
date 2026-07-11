@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VoiceTyper</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎤 VoiceTyper</h1>
+      <p>快捷鍵: Cmd/Ctrl + Shift + V（按一次開始，再按一次結束）</p>
+    </div>
+
+    <div class="status-area">
+      <div id="status" class="status idle">
+        <span class="indicator"></span>
+        <span id="status-text">待機中</span>
+      </div>
+    </div>
+
+    <div class="result-area">
+      <div id="result-text" class="result-text">辨識結果將顯示在這裡</div>
+    </div>
+
+    <button id="settings-btn" class="btn-settings">⚙️ 設定</button>
+  </div>
+
+  <script src="recorder.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
