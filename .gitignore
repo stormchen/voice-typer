@@ -6,6 +6,9 @@ dist/
 build/
 out/
 
+# 產生物（由 npm run icon / prebuild 生成）
+assets/icon.png
+
 # 日誌
 *.log
 logs/
