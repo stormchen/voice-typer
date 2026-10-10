@@ -1,5 +1,5 @@
 // ASR API 客戶端 - 支援遠端 vLLM 伺服器（OpenAI 相容 API）、Google Gemini API 或 Groq API
-// 指數退避重試（僅網路錯誤與 5xx）、依音頻長度動態調整逾時
+// 重試（網路錯誤、429、5xx；429 優先尊重 Retry-After）、依音頻長度動態調整逾時
 const axios = require('axios');
 const FormData = require('form-data');
 const logger = require('./logger');
@@ -14,30 +14,49 @@ function normalizeUrl(url) {
   return String(url || '').trim().replace(/\/+$/, '');
 }
 
+const BACKEND_LABEL = {
+  vllm: 'vLLM 伺服器',
+  gemini: 'Gemini API',
+  groq: 'Groq API'
+};
+
 // 將底層錯誤轉為使用者看得懂的中文訊息
-function friendlyError(error) {
+function friendlyError(error, label = '伺服器') {
   if (error.response) {
     const status = error.response.status;
     const detail =
       (error.response.data && (error.response.data.error?.message || error.response.data.detail)) || '';
-    if (status === 429) return '已達速率限制（429），請稍後再試';
-    if (status === 401 || status === 403) return `伺服器拒絕存取（${status}），請檢查 API Key`;
-    if (status === 404) return `伺服器找不到辨識端點（404），請確認 vLLM 版本與地址`;
+    if (status === 429) return `已達 ${label} 的速率限制（429），重試後仍被限制，請稍後再試`;
+    if (status === 401 || status === 403) return `${label}拒絕存取（${status}），請檢查 API Key`;
+    if (status === 404) return `${label}找不到辨識端點（404），請確認地址與模型名稱`;
     if (status === 413) return `音頻檔案過大（413），請縮短錄音長度`;
-    return `伺服器錯誤（${status}）${detail ? ': ' + detail : ''}`;
+    return `${label}錯誤（${status}）${detail ? ': ' + detail : ''}`;
   }
   const code = error.code || '';
-  if (code === 'ECONNREFUSED') return '無法連線到伺服器，請確認 vLLM 伺服器已啟動且地址正確';
-  if (code === 'ENOTFOUND') return '找不到伺服器主機，請檢查伺服器地址';
+  if (code === 'ECONNREFUSED') return `無法連線到 ${label}，請確認服務可達且地址正確`;
+  if (code === 'ENOTFOUND') return `找不到 ${label} 的主機，請檢查地址`;
   if (code === 'ECONNABORTED' || /timeout/i.test(error.message)) return '請求逾時，伺服器可能忙碌或網路不穩';
   if (code === 'ECONNRESET') return '連線被重置，請重試';
   return error.message || '未知錯誤';
 }
 
-// 4xx 客戶端錯誤重試沒有意義；僅重試網路錯誤與 5xx
+// 4xx 客戶端錯誤重試沒有意義（429 除外）；僅重試網路錯誤、429 與 5xx
 function isRetryable(error) {
   if (!error.response) return true; // 網路層錯誤
-  return error.response.status >= 500;
+  const status = error.response.status;
+  return status === 429 || status >= 500;
+}
+
+// Retry-After 可能是秒數或 HTTP-date；上限 60 秒，避免異常等待
+function retryDelayMs(error, attempt) {
+  const header = error.response && error.response.headers && error.response.headers['retry-after'];
+  if (header !== undefined) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds)) return Math.min(Math.max(seconds, 0), 60) * 1000;
+    const date = Date.parse(header);
+    if (!Number.isNaN(date)) return Math.min(Math.max((date - Date.now()) / 1000, 0), 60) * 1000;
+  }
+  return Math.pow(2, attempt) * 1000;
 }
 
 class ASRClient {
@@ -61,7 +80,7 @@ class ASRClient {
     return Math.min(30000 + Math.ceil(audioSeconds) * 2000, 300000);
   }
 
-  // 語音轉文字（含重試，指數退避：1s → 2s → 4s）
+  // 語音轉文字（含重試；429 優先使用 Retry-After，其餘走 2^n 秒指數退避）
   async transcribe(audioBuffer, retries = 3) {
     let lastError = null;
     for (let i = 0; i < retries; i++) {
@@ -80,11 +99,11 @@ class ASRClient {
           status: error.response ? error.response.status : undefined
         });
         if (!isRetryable(error) || i === retries - 1) break;
-        const delay = Math.pow(2, i) * 1000;
+        const delay = retryDelayMs(error, i);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
-    throw new Error(friendlyError(lastError));
+    throw new Error(friendlyError(lastError, BACKEND_LABEL[this.config.backend] || '伺服器'));
   }
 
   // baseUrl 省略時使用自架 vLLM 的 apiUrl（含 /v1 前綴）；Groq 則傳入固定的雲端端點（已含 /v1）
@@ -171,7 +190,7 @@ class ASRClient {
       });
       return (response.data.data || []).map((m) => m.id);
     } catch (error) {
-      throw new Error(friendlyError(error));
+      throw new Error(friendlyError(error, BACKEND_LABEL.vllm));
     }
   }
 
@@ -185,7 +204,7 @@ class ASRClient {
       });
       return (response.data.data || []).map((m) => m.id);
     } catch (error) {
-      throw new Error(friendlyError(error));
+      throw new Error(friendlyError(error, BACKEND_LABEL.groq));
     }
   }
 
@@ -201,7 +220,7 @@ class ASRClient {
         .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
         .map((m) => String(m.name || '').replace(/^models\//, ''));
     } catch (error) {
-      throw new Error(friendlyError(error));
+      throw new Error(friendlyError(error, BACKEND_LABEL.gemini));
     }
   }
 }
