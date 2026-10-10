@@ -5,9 +5,9 @@
 ```
 Electron Main Process (src/main.js)
 ├── TrayManager (components/tray-manager.js)      系統匣、狀態提示
-├── ASRClient (components/api-client.js)          vLLM REST 客戶端 + 重試
+├── ASRClient (components/api-client.js)          ASR API 客戶端（vLLM / Gemini / Groq）+ 重試
 ├── ClipboardManager (components/clipboard.js)    剪貼簿 + 模擬貼上
-├── SettingsStore (components/settings-store.js)  userData/config.json
+├── SettingsStore (components/settings-store.js)  userData/config.json（API Key 以 OS keychain 加密落盤）
 └── Logger (components/logger.js)                 ~/.voicetyper/voicetyper.log
 
 Renderer Process (public/)
@@ -26,7 +26,8 @@ Renderer Process (public/)
   → renderer: WebAudioRecorder.stop()
       重新採樣至 16kHz → 音量標準化 → 編碼 16-bit PCM WAV
   → IPC 'audio-captured' 傳回主進程
-  → ASRClient.transcribe()：POST /v1/audio/transcriptions（重試 3 次，指數退避）
+  → ASRClient.transcribe()：vLLM/Groq 走 POST /v1/audio/transcriptions、Gemini 走 generateContent
+      （重試 3 次，僅網路錯誤、429 與 5xx；429 優先尊重 Retry-After，其餘 2ⁿ 秒指數退避）
   → ClipboardManager.paste()：寫入剪貼簿 + 模擬 Ctrl/Cmd+V
   → UI 顯示辨識結果
 ```
@@ -41,11 +42,13 @@ Renderer Process (public/)
 |------|------|------|
 | `start-recording` / `stop-recording` | main → renderer | 控制錄音 |
 | `recording-started` / `recognizing` / `recognition-complete` / `error` | main → renderer | UI 狀態 |
+| `recording-limit` | main → renderer | 達錄音時長上限，自動停止 |
+| `history-updated` | main → renderer | 歷史記錄變更 |
 | `audio-captured` | renderer → main | 回傳 WAV ArrayBuffer |
 | `audio-error` | renderer → main | 錄音錯誤 |
-| `open-settings` / `save-settings` | renderer → main | 設定操作 |
-| `get-settings` / `test-connection` | invoke/handle | 讀設定、測試伺服器 |
+| `open-settings` | renderer → main（send） | 開啟設定視窗 |
+| `get-settings` / `save-settings` / `test-connection` / `get-history` / `clear-history` / `copy-text` | invoke/handle | 讀寫設定、測試伺服器、歷史與剪貼簿 |
 
 ## 安全考量
 
-`contextIsolation: true` + preload 白名單 IPC；音頻不落地——錄音緩衝區送出後即釋放；API Key 存於使用者目錄設定檔（生產環境建議改用 OS keychain）。
+`contextIsolation: true` + preload 白名單 IPC（send / receive / invoke 三組 channel 白名單）；音頻不落地——錄音緩衝區送出後即釋放；API Key 落盤時經 `safeStorage`（OS keychain / Windows DPAPI）加密，記憶體中保持明文供 ASRClient 使用，舊明文設定檔首次載入即遷移；若系統加密不可用則退回明文並記錄錯誤。

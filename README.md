@@ -20,7 +20,7 @@ VoiceTyper 與後端模型完全分離：本專案只是 API 客戶端。vLLM �
 
 ## 功能
 
-全域快捷鍵錄音（預設 `Ctrl+Shift+V`，按一次開始、再按一次結束，可在設定中自訂任意組合鍵）、16kHz WAV 音頻擷取與音量標準化、辨識結果自動貼上到焦點視窗、辨識歷史記錄（點擊複製）、系統匣常駐、開機自動啟動、指數退避自動重試（僅網路錯誤與 5xx）、依音頻長度動態調整逾時、單一實例鎖、錄音時長上限保護、JSON 日誌（`~/.voicetyper/voicetyper.log`）。
+全域快捷鍵錄音（預設 `Ctrl+Shift+V`，按一次開始、再按一次結束，可在設定中自訂任意組合鍵）、16kHz WAV 音頻擷取與音量標準化、辨識結果自動貼上到焦點視窗、辨識歷史記錄（點擊複製）、系統匣常駐、開機自動啟動、自動重試（僅網路錯誤、429 與 5xx；429 優先尊重 `Retry-After`，否則 2ⁿ 秒指數退避）、依音頻長度動態調整逾時、單一實例鎖、錄音時長上限保護、JSON 日誌（`~/.voicetyper/voicetyper.log`）。
 
 ### 貼上方式（設定 → 貼上方式）
 
@@ -77,6 +77,7 @@ npm start
 ```bash
 npm run build:win   # Windows (.exe：NSIS 安裝檔 + portable)
 npm run build:mac   # macOS (.dmg)
+npm run build       # 依目前平台；Linux 為 AppImage
 ```
 
 打包前會自動執行 `scripts/generate-icon.js` 產生應用圖示（純 Node，無外部依賴），輸出位於 `dist/`。
@@ -98,9 +99,9 @@ voice-typer/
 │   ├── preload.js                 # IPC 安全介面（channel 白名單）
 │   └── components/
 │       ├── tray-manager.js        # 系統匣管理
-│       ├── api-client.js          # ASR API 客戶端（vLLM）
+│       ├── api-client.js          # ASR API 客戶端（vLLM / Gemini / Groq）+ 重試
 │       ├── clipboard.js           # 剪貼簿與自動貼上（三種策略）
-│       ├── settings-store.js      # 設定持久化
+│       ├── settings-store.js      # 設定持久化（API Key 以 OS keychain 加密落盤）
 │       └── logger.js              # 日誌
 ├── public/
 │   ├── index.html                 # 主 UI（含歷史記錄）
@@ -109,9 +110,12 @@ voice-typer/
 │   ├── renderer.js                # UI 邏輯
 │   └── styles/main.css
 ├── scripts/generate-icon.js       # 應用圖示產生器
+├── test/
+│   └── api-client.test.js         # node:test 單元測試（npm test）
 ├── docs/
 │   ├── architecture.md            # 架構文檔
-│   └── vllm-setup.md              # vLLM 伺服器部署
+│   ├── vllm-setup.md              # vLLM 伺服器部署
+│   └── planning/                  # 設計紀錄（Setup-Guide / Code-Templates / VibeVoice-Integration）
 ├── assets/tray-icon.png
 ├── package.json
 └── electron-builder.json          # 打包設定（單一來源）
