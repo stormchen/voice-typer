@@ -35,12 +35,6 @@ contextBridge.exposeInMainWorld('api', {
     }
   },
 
-  once: (channel, func) => {
-    if (RECEIVE_CHANNELS.includes(channel)) {
-      ipcRenderer.once(channel, (event, ...args) => func(...args));
-    }
-  },
-
   invoke: (channel, data) => {
     if (INVOKE_CHANNELS.includes(channel)) {
       return ipcRenderer.invoke(channel, data);
