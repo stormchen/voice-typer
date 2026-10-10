@@ -226,3 +226,7 @@ class ASRClient {
 }
 
 module.exports = ASRClient;
+// 內部輔助函式（供單元測試直接驗證錯誤分類與退避邏輯）
+module.exports.friendlyError = friendlyError;
+module.exports.isRetryable = isRetryable;
+module.exports.retryDelayMs = retryDelayMs;

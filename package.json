@@ -20,6 +20,7 @@
   },
   "scripts": {
     "start": "electron .",
+    "test": "node --test",
     "icon": "node scripts/generate-icon.js",
     "prebuild": "node scripts/generate-icon.js",
     "build": "electron-builder",

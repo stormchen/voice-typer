@@ -8,7 +8,6 @@ class TrayManager {
     this.mainWindow = mainWindow;
     this.callbacks = callbacks;
     this.tray = null;
-    this.recordingState = 'idle'; // 'idle' | 'recording' | 'recognizing'
     this.init();
   }
 
@@ -57,7 +56,6 @@ class TrayManager {
   }
 
   setRecordingState(state) {
-    this.recordingState = state;
     let tooltip = 'VoiceTyper';
 
     switch (state) {

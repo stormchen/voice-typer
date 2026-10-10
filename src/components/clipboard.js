@@ -7,6 +7,7 @@
 //   'copy-only'    僅複製到剪貼簿，不模擬按鍵（最保險，手動貼上）
 const { clipboard } = require('electron');
 const { exec } = require('child_process');
+const logger = require('./logger');
 
 // windowsHide：避免 Windows 上閃出 PowerShell 主控台視窗搶走焦點
 const EXEC_OPTS = { windowsHide: true, timeout: 10000 };
@@ -43,19 +44,11 @@ class ClipboardManager {
       exec(buildPasteCommand(mode), EXEC_OPTS, (error) => {
         if (error) {
           // 模擬貼上失敗時不擲出錯誤——文字已在剪貼簿中，使用者可手動貼上
-          console.warn('自動貼上失敗，文字已複製到剪貼簿:', error.message);
+          logger.error('自動貼上失敗，文字已複製到剪貼簿', { message: error.message });
         }
         resolve();
       });
     });
-  }
-
-  static copyToClipboard(text) {
-    clipboard.writeText(text);
-  }
-
-  static readFromClipboard() {
-    return clipboard.readText();
   }
 }
 

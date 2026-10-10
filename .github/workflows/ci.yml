@@ -28,4 +28,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          find src public scripts -name '*.js' -print0 | xargs -0 -n1 node --check
+          find src public scripts test -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Run tests
+        run: npm test

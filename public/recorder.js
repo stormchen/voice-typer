@@ -24,6 +24,8 @@ class WebAudioRecorder {
     });
 
     this.audioContext = new AudioContext();
+    // 渲染進程可能以 suspended 狀態建立 AudioContext，未 resume 時不會產生 onaudioprocess
+    await this.audioContext.resume();
     this.source = this.audioContext.createMediaStreamSource(this.stream);
 
     // ScriptProcessor 相容性最佳（AudioWorklet 需額外檔案）

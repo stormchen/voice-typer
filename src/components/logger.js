@@ -35,10 +35,6 @@ class Logger {
   error(msg, meta) {
     this.log('ERROR', msg, meta);
   }
-
-  debug(msg, meta) {
-    this.log('DEBUG', msg, meta);
-  }
 }
 
 module.exports = new Logger();

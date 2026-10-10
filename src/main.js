@@ -220,7 +220,7 @@ function applyLaunchAtLogin(enabled) {
   }
 }
 
-app.on('ready', () => {
+app.whenReady().then(() => {
   settingsStore = new SettingsStore();
   const config = settingsStore.getAll();
   loadHistory();
