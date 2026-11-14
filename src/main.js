@@ -30,6 +30,9 @@ let settingsStore = null;
 // 狀態機：idle → recording → transcribing → idle
 // 防止「辨識中再開新錄音」等競態
 let state = 'idle';
+let awaitingAudio = false;
+let nextRecordingId = 0;
+let activeRecordingId = null;
 let rendererReady = false;
 let maxRecordTimer = null;   // 錄音時長上限
 let stopSafetyTimer = null;  // 停止後等不到音頻資料的安全逾時
@@ -137,6 +140,8 @@ function clearTimers() {
 function resetToIdle() {
   clearTimers();
   state = 'idle';
+  awaitingAudio = false;
+  activeRecordingId = null;
   trayManager.setRecordingState('idle');
 }
 
@@ -146,15 +151,16 @@ function startRecording() {
     return;
   }
   state = 'recording';
+  const id = activeRecordingId = ++nextRecordingId;
   trayManager.setRecordingState('recording');
-  sendToMain('start-recording');
+  sendToMain('start-recording', { id });
   sendToMain('recording-started');
   logger.info('開始錄音');
 
   // 錄音時長上限：避免忘記停止導致記憶體無限成長
   const maxSeconds = Number(settingsStore.get('maxRecordSeconds')) || 120;
   maxRecordTimer = setTimeout(() => {
-    if (state === 'recording') {
+    if (state === 'recording' && activeRecordingId === id) {
       logger.info('達到錄音時長上限，自動停止', { maxSeconds });
       sendToMain('recording-limit', { maxSeconds });
       stopRecording();
@@ -165,14 +171,16 @@ function startRecording() {
 function stopRecording() {
   clearTimers();
   state = 'transcribing';
+  awaitingAudio = true;
+  const id = activeRecordingId;
   trayManager.setRecordingState('recognizing');
-  sendToMain('stop-recording');
+  sendToMain('stop-recording', { id });
   sendToMain('recognizing');
   logger.info('停止錄音，等待音頻資料');
 
   // 安全逾時：渲染進程若未回傳音頻，強制復位避免卡死
   stopSafetyTimer = setTimeout(() => {
-    if (state === 'transcribing') {
+    if (state === 'transcribing' && awaitingAudio && activeRecordingId === id) {
       logger.error('等待音頻資料逾時，狀態復位');
       resetToIdle();
       sendToMain('error', { message: '錄音資料處理逾時，請重試' });
@@ -249,15 +257,16 @@ app.whenReady().then(() => {
 // ===== IPC 通信 =====
 
 // 渲染進程回傳錄音完成的 WAV 資料（ArrayBuffer）
-ipcMain.on('audio-captured', async (event, arrayBuffer) => {
-  if (state !== 'transcribing') {
-    logger.info('非辨識狀態收到音頻資料，忽略');
+ipcMain.on('audio-captured', async (event, payload) => {
+  if (!payload || payload.id !== activeRecordingId || state !== 'transcribing' || !awaitingAudio) {
+    logger.info('未等待音頻資料，忽略重複或過期音頻');
     return;
   }
+  awaitingAudio = false;
   if (stopSafetyTimer) { clearTimeout(stopSafetyTimer); stopSafetyTimer = null; }
 
   try {
-    const audioBuffer = Buffer.from(arrayBuffer);
+    const audioBuffer = Buffer.from(payload.audio);
     logger.info('收到音頻資料', { bytes: audioBuffer.length });
 
     const text = await asrClient.transcribe(audioBuffer);
@@ -284,7 +293,12 @@ ipcMain.on('audio-captured', async (event, arrayBuffer) => {
 });
 
 // 錄音失敗（例如麥克風權限被拒）
-ipcMain.on('audio-error', (event, message) => {
+ipcMain.on('audio-error', (event, payload) => {
+  if (!payload || payload.id !== activeRecordingId || state === 'idle' || (state === 'transcribing' && !awaitingAudio)) {
+    logger.info('忽略過期的錄音錯誤');
+    return;
+  }
+  const message = payload.message;
   logger.error('錄音錯誤', { message });
   resetToIdle();
   sendToMain('error', { message });
@@ -294,7 +308,10 @@ ipcMain.on('audio-error', (event, message) => {
 ipcMain.on('open-settings', () => createSettingsWindow());
 
 // 讀取設定 / 歷史
-ipcMain.handle('get-settings', () => settingsStore.getAll());
+ipcMain.handle('get-settings', () => {
+  const security = settingsStore.getSecurityStatus();
+  return { ...settingsStore.getAll(), apiKeyDecryptionFailed: security.decryptionFailed, apiKeyWarning: security.warning };
+});
 ipcMain.handle('get-history', () => history);
 
 // 點擊歷史項目 → 複製到剪貼簿
@@ -314,20 +331,24 @@ ipcMain.handle('clear-history', () => {
 // 儲存設定（invoke：回報快捷鍵註冊結果）
 ipcMain.handle('save-settings', (event, settings) => {
   const previousHotkey = settingsStore.get('hotkey');
-  settingsStore.setAll(settings);
-  asrClient.updateConfig(settings);
-  applyLaunchAtLogin(settings.launchAtLogin);
+  const { clearUnavailableApiKey, ...values } = settings;
+  if (!settingsStore.setAll(values, { clearEncryptedKey: clearUnavailableApiKey === true })) {
+    return { ok: false, message: '設定儲存失敗，請檢查系統加密服務與設定檔權限' };
+  }
+  asrClient.updateConfig(values);
+  applyLaunchAtLogin(values.launchAtLogin);
 
-  const newHotkey = settings.hotkey || 'CommandOrControl+Shift+V';
+  const newHotkey = values.hotkey || 'CommandOrControl+Shift+V';
   if (!registerHotkey(newHotkey)) {
-    // 註冊失敗：還原舊快捷鍵，讓功能維持可用
-    registerHotkey(previousHotkey);
-    settingsStore.set('hotkey', previousHotkey);
-    return { ok: false, message: `快捷鍵 ${newHotkey} 註冊失敗（可能被其他程式佔用），已保留原設定` };
+    // 其他設定已落盤；另外嘗試還原快捷鍵與其設定。
+    const registered = registerHotkey(previousHotkey);
+    const saved = settingsStore.set('hotkey', previousHotkey);
+    const recovery = registered && saved ? '已還原原快捷鍵' : '原快捷鍵恢復失敗，請重新設定';
+    return { ok: false, message: `快捷鍵 ${newHotkey} 註冊失敗（可能被其他程式佔用），${recovery}；其他設定已儲存`, warning: settingsStore.getSecurityStatus().warning };
   }
 
   logger.info('設定已儲存');
-  return { ok: true };
+  return { ok: true, warning: settingsStore.getSecurityStatus().warning };
 });
 
 // 測試伺服器連接（在主進程執行，避免 CORS 問題）

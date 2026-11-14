@@ -58,24 +58,26 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ===== 主進程指令：開始 / 停止錄音 =====
-  window.api.receive('start-recording', async () => {
+  window.api.receive('start-recording', async ({ id }) => {
     try {
-      await recorder.start();
+      await recorder.start((error) => {
+        window.api.send('audio-error', { id, message: '錄音處理失敗: ' + error.message });
+      }, id);
     } catch (error) {
-      window.api.send('audio-error', '無法存取麥克風: ' + error.message);
+      window.api.send('audio-error', { id, message: '無法開始錄音: ' + error.message });
     }
   });
 
-  window.api.receive('stop-recording', async () => {
+  window.api.receive('stop-recording', async ({ id }) => {
     try {
-      const wavBuffer = await recorder.stop();
+      const wavBuffer = await recorder.stop(id);
       if (wavBuffer) {
-        window.api.send('audio-captured', wavBuffer);
+        window.api.send('audio-captured', { id, audio: wavBuffer });
       } else {
-        window.api.send('audio-error', '沒有錄到音頻資料');
+        window.api.send('audio-error', { id, message: '沒有錄到音頻資料' });
       }
     } catch (error) {
-      window.api.send('audio-error', '錄音處理失敗: ' + error.message);
+      window.api.send('audio-error', { id, message: '錄音處理失敗: ' + error.message });
     }
   });
 

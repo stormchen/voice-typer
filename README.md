@@ -59,10 +59,21 @@ python -m vllm.entrypoints.openai.api_server \
 
 ### 2. 啟動 VoiceTyper
 
+開發環境需要 Node.js 22.13 以上的 22.x，或 Node.js 24 以上；CI 使用 Node.js 24。
+
 ```bash
 npm install
 npm start
 ```
+
+執行檢查：
+
+```bash
+npm run lint
+npm test
+```
+
+部分測試會使用獨立設定目錄啟動 Electron；Linux 的無桌面環境需要 Xvfb。
 
 ### 3. 設定辨識後端
 
@@ -71,6 +82,14 @@ npm start
 - **vLLM**：辨識後端選「vLLM 伺服器」，填入伺服器地址（例如 `http://192.168.1.100:8000`），點「測試連接」確認後儲存。
 - **Gemini**：辨識後端選「Google Gemini API」，填入剛申請的 API Key，模型名稱預設 `gemini-flash-latest`（會自動對應官方最新 Flash 模型），點「測試連接」確認後儲存。
 - **Groq**：辨識後端選「Groq API」，填入剛申請的 API Key，模型名稱預設 `whisper-large-v3-turbo`，點「測試連接」確認後儲存。
+
+### API Key 與降級注意事項
+
+API Key 儲存在使用者設定檔中；系統的 Electron `safeStorage` 可用時會加密。若加密服務不可用，原本加密的金鑰會保留為密文；沒有既有密文時，金鑰可能以明文保存，設定介面與日誌會顯示警告（不包含金鑰）。解密失敗時可重新輸入 API Key，或在設定介面明確選擇清除；儲存其他設定不會刪除無法解密的密文。
+
+Linux 需要可用的系統金鑰圈才能有效保護金鑰。若 Electron 使用 `basic_text` 後端，即使資料看似加密，保護仍依賴固定密碼，不應視為安全儲存；詳見 [Electron safeStorage 文件](https://www.electronjs.org/docs/latest/api/safe-storage)。
+
+1.1.0 等舊版無法讀取新版的加密金鑰格式。若需降級，先關閉程式並備份設定檔，再移除設定檔中的 `apiKey` 欄位，啟動舊版後重新輸入金鑰。舊版可能以明文儲存金鑰，請自行評估風險並保護備份與設定檔；不要把它們提交到版本控制。
 
 ## 打包
 
@@ -81,6 +100,8 @@ npm run build       # 依目前平台；Linux 為 AppImage
 ```
 
 打包前會自動執行 `scripts/generate-icon.js` 產生應用圖示（純 Node，無外部依賴），輸出位於 `dist/`。
+
+為修補建置依賴的安全問題，`package.json` 暫時將受影響的 `minimatch` 版本覆寫為 11.x。更新 electron-builder 後應重新執行 `npm audit` 與跨平台打包測試，確認上游修復後移除覆寫。
 
 ## 平台注意事項
 
@@ -106,12 +127,14 @@ voice-typer/
 ├── public/
 │   ├── index.html                 # 主 UI（含歷史記錄）
 │   ├── settings.html              # 設定面板（自訂快捷鍵、貼上方式等）
+│   ├── settings.js                # 設定面板邏輯
 │   ├── recorder.js                # Web Audio 錄音器（16kHz WAV）
+│   ├── recorder-worklet.js        # 音頻擷取與分塊
 │   ├── renderer.js                # UI 邏輯
 │   └── styles/main.css
 ├── scripts/generate-icon.js       # 應用圖示產生器
 ├── test/
-│   └── api-client.test.js         # node:test 單元測試（npm test）
+│   └── *.test.js                  # node:test 單元與隔離整合測試（npm test）
 ├── docs/
 │   ├── architecture.md            # 架構文檔
 │   ├── vllm-setup.md              # vLLM 伺服器部署

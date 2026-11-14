@@ -18,17 +18,50 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Electron runtime
+        run: node node_modules/electron/install.js
+
       - name: Syntax check
         shell: bash
         run: |
           set -e
-          find src public scripts test -name '*.js' -print0 | xargs -0 -n1 node --check
+          find src public scripts test -type f \( -name '*.js' -o -name '*.cjs' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
 
-      - name: Run tests
+      - name: Lint
+        run: npm run lint
+
+      - name: Prepare Electron sandbox on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # Ubuntu can block Chromium's unprivileged user namespaces via AppArmor.
+          # Allow them for this Electron binary without disabling Chromium's sandbox.
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] &&
+             [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1 ]; then
+            electron_path="$(realpath node_modules/electron/dist/electron)"
+            profile="$RUNNER_TEMP/voice-typer-electron-apparmor"
+            printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile voice-typer-electron "%s" flags=(unconfined) {\n  userns,\n}\n' "$electron_path" > "$profile"
+            sudo apparmor_parser -r "$profile"
+          fi
+
+      - name: Run tests on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        # The Electron fixture passes DISPLAY but not XAUTHORITY to its child.
+        # Xvfb has no TCP listener; -ac permits that child to use this CI display.
+        run: |
+          if ! command -v xvfb-run >/dev/null || ! command -v xauth >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb xauth
+          fi
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24 -ac" npm test
+
+      - name: Run tests on Windows and macOS
+        if: runner.os != 'Linux'
         run: npm test

@@ -1,6 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const ASRClient = require('../src/components/api-client');
+const Module = require('node:module');
+
+// 防止載入 ASRClient 的測試觸碰實際使用者的日誌目錄。
+const clientPath = require.resolve('../src/components/api-client');
+const originalLoad = Module._load;
+let ASRClient;
+Module._load = function (request, parent, ...rest) {
+  if (parent?.filename === clientPath && request === './logger') return { info() {}, error() {} };
+  return originalLoad.call(this, request, parent, ...rest);
+};
+try {
+  ASRClient = require(clientPath);
+} finally {
+  Module._load = originalLoad;
+}
 
 const { friendlyError, isRetryable, retryDelayMs } = ASRClient;
 
@@ -43,15 +57,16 @@ test('isRetryable 只重試網路錯誤、429 與 5xx', () => {
   assert.equal(isRetryable(networkError('ETIMEDOUT')), true);
 });
 
-test('retryDelayMs 優先尊重 Retry-After，並上限 60 秒', () => {
+test('retryDelayMs 優先尊重 Retry-After，並上限 60 秒', (t) => {
   assert.equal(retryDelayMs(responseError(429, { 'retry-after': '2' }), 0), 2000);
   assert.equal(retryDelayMs(responseError(429, { 'retry-after': '0' }), 0), 0);
   assert.equal(retryDelayMs(responseError(429, { 'retry-after': '61' }), 0), 60000);
   assert.equal(retryDelayMs(responseError(429, { 'retry-after': 'not-a-number' }), 1), 2000);
 
+  t.mock.method(Date, 'now', () => Date.UTC(2026, 0, 1));
   const future = new Date(Date.now() + 3000).toUTCString();
   const delay = retryDelayMs(responseError(429, { 'retry-after': future }), 0);
-  assert.ok(delay >= 2000 && delay <= 3000, `HTTP-date 退避应在 2000-3000ms，實得 ${delay}`);
+  assert.equal(delay, 3000);
 
   const past = new Date(Date.now() - 5000).toUTCString();
   assert.equal(retryDelayMs(responseError(429, { 'retry-after': past }), 0), 0);

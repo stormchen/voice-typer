@@ -1,6 +1,9 @@
 // 音頻錄製器（渲染進程）
 // 使用 Web Audio API 擷取 16kHz 單聲道 PCM，並編碼為 WAV
 // VibeVoice-ASR 要求 16kHz 取樣率
+const recorderWorkletUrl = new URL('recorder-worklet.js', document.currentScript.src).href;
+const AUDIO_CLOSE_TIMEOUT_MS = 5000;
+
 class WebAudioRecorder {
   constructor(sampleRate = 16000) {
     this.targetRate = sampleRate;
@@ -10,63 +13,184 @@ class WebAudioRecorder {
     this.processor = null;
     this.source = null;
     this.recording = false;
+    this._session = null;
+    this._pendingStart = null;
   }
 
-  async start() {
-    if (this.recording) return;
-
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        noiseSuppression: true,
-        echoCancellation: true
+  start(onError, id) {
+    const previous = this._session;
+    if (previous) {
+      if (id !== undefined && previous.id !== id) {
+        return Promise.reject(new Error('前次錄音尚未結束，請稍後再試'));
       }
-    });
+      if (previous.state === 'starting' || previous.state === 'recording') {
+        return previous.startPromise;
+      }
+      if (this._pendingStart) return this._pendingStart.promise;
+      const finishing = previous.stopPromise || previous.cleanupPromise;
+      const pending = { cancelled: false };
+      pending.promise = finishing.catch(() => {}).then(() => {
+        if (this._pendingStart === pending) this._pendingStart = null;
+        if (pending.cancelled) return;
+        if (this._session === previous) this._session = null;
+        return this.start(onError, id);
+      });
+      this._pendingStart = pending;
+      return pending.promise;
+    }
 
-    this.audioContext = new AudioContext();
-    // 渲染進程可能以 suspended 狀態建立 AudioContext，未 resume 時不會產生 onaudioprocess
-    await this.audioContext.resume();
-    this.source = this.audioContext.createMediaStreamSource(this.stream);
-
-    // ScriptProcessor 相容性最佳（AudioWorklet 需額外檔案）
-    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-    this.chunks = [];
-
-    this.processor.onaudioprocess = (e) => {
-      if (!this.recording) return;
-      this.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    let cancel;
+    const session = {
+      state: 'starting',
+      id,
+      cancelled: false,
+      onError,
+      chunks: [],
+      cancelPromise: new Promise((resolve) => { cancel = resolve; }),
+      cancel
     };
+    this._session = session;
+    session.startPromise = this._startSession(session);
+    return session.startPromise;
+  }
 
-    this.source.connect(this.processor);
-    this.processor.connect(this.audioContext.destination);
-    this.recording = true;
+  async _startSession(session) {
+    try {
+      const streamPromise = navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          noiseSuppression: true,
+          echoCancellation: true
+        }
+      }).then((stream) => {
+        // getUserMedia 無法取消；若停止後才取得串流，仍須釋放。
+        if (session.cancelled) this._stopTracks(stream);
+        else this.stream = session.stream = stream;
+        return stream;
+      });
+      const stream = await Promise.race([streamPromise, session.cancelPromise]);
+      if (session.cancelled) return;
+
+      const context = this.audioContext = session.audioContext = new AudioContext();
+      // 隱藏視窗也可能以 suspended 狀態建立 AudioContext。
+      await Promise.race([context.resume(), session.cancelPromise]);
+      if (session.cancelled) return;
+      await Promise.race([context.audioWorklet.addModule(recorderWorkletUrl), session.cancelPromise]);
+      if (session.cancelled) return;
+
+      const source = this.source = session.source = context.createMediaStreamSource(stream);
+      const processor = this.processor = session.processor = new AudioWorkletNode(context, 'voice-typer-recorder', {
+        channelCount: 1,
+        channelCountMode: 'explicit'
+      });
+      this.chunks = session.chunks;
+      processor.port.onmessage = ({ data }) => {
+        if (data.type === 'chunk') session.chunks.push(data.samples);
+        else if (data.type === 'stopped' && session.resolveDrain) session.resolveDrain();
+      };
+      processor.onprocessorerror = () => {
+        session.error = new Error('AudioWorklet processor failed');
+        if (session.state === 'stopping' && session.rejectDrain) {
+          session.rejectDrain(session.error);
+        } else if (session.state === 'recording') {
+          session.state = 'failed';
+          session.chunks = [];
+          this.chunks = [];
+          this._cleanupSession(session).then(() => {
+            // 已主動回報錯誤時，資源釋放後允許新的工作階段開始。
+            if (session.errorNotified && this._session === session) this._session = null;
+          });
+          if (typeof session.onError === 'function') {
+            // 回呼可能同步呼叫 stop，先標記以免重複回報。
+            session.errorNotified = true;
+            const onError = session.onError;
+            onError(session.error);
+          }
+        }
+      };
+
+      source.connect(processor);
+      // 不輸出聲音，但保持節點連至 destination，讓隱藏視窗持續處理音訊。
+      processor.connect(context.destination);
+      session.state = 'recording';
+      this.recording = true;
+    } catch (error) {
+      session.state = 'failed';
+      session.error = error;
+      await this._cleanupSession(session);
+      if (!session.cancelled) {
+        if (this._session === session) this._session = null;
+        throw error;
+      }
+    }
   }
 
   // 停止錄音並回傳 WAV 的 ArrayBuffer
-  async stop() {
-    if (!this.recording) return null;
+  stop(id) {
+    const session = this._session;
+    if (id !== undefined && session && session.id !== id) return Promise.resolve(null);
+    if (this._pendingStart) {
+      this._pendingStart.cancelled = true;
+      this._pendingStart = null;
+    }
+    if (!session) return Promise.resolve(null);
+    if (session.state === 'stopping') return session.stopPromise;
+
+    const wasStarting = session.state === 'starting';
+    const error = session.error;
+    session.state = 'stopping';
     this.recording = false;
+    if (wasStarting) {
+      session.cancelled = true;
+      session.cancel();
+    }
 
-    const inputRate = this.audioContext.sampleRate;
+    session.stopPromise = (async () => {
+      try {
+        if (wasStarting || error) {
+          await this._cleanupSession(session);
+          if (error && !session.errorNotified) throw error;
+          return null;
+        }
+        return await this._stopSession(session);
+      } finally {
+        if (this._session === session) this._session = null;
+      }
+    })();
+    return session.stopPromise;
+  }
 
-    // 逐項清理，任一失敗不影響後續資源釋放
-    try { this.source.disconnect(); } catch (_) {}
-    try { this.processor.disconnect(); } catch (_) {}
-    try { this.stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
-    try { await this.audioContext.close(); } catch (_) {}
-    this.source = null;
-    this.processor = null;
-    this.stream = null;
-    this.audioContext = null;
+  async _stopSession(session) {
+    const inputRate = session.audioContext.sampleRate;
+    let timer;
+    try {
+      // 同一 MessagePort 的先後順序確保 stopped 之前的所有音訊已接收。
+      await new Promise((resolve, reject) => {
+        session.resolveDrain = resolve;
+        session.rejectDrain = reject;
+        timer = setTimeout(() => reject(new Error('AudioWorklet stop timed out')), 5000);
+        try { session.processor.port.postMessage({ type: 'stop' }); } catch (error) { reject(error); }
+      });
+    } catch (error) {
+      session.chunks = [];
+      if (this._session === session) this.chunks = [];
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      session.resolveDrain = null;
+      session.rejectDrain = null;
+      await this._cleanupSession(session);
+    }
 
     // 合併所有音頻塊
-    const totalLength = this.chunks.reduce((sum, c) => sum + c.length, 0);
+    const totalLength = session.chunks.reduce((sum, c) => sum + c.length, 0);
     const merged = new Float32Array(totalLength);
     let offset = 0;
-    for (const chunk of this.chunks) {
+    for (const chunk of session.chunks) {
       merged.set(chunk, offset);
       offset += chunk.length;
     }
+    session.chunks = [];
     this.chunks = [];
 
     // 重新採樣到 16kHz
@@ -76,6 +200,49 @@ class WebAudioRecorder {
     const normalized = this._normalize(resampled);
 
     return this._encodeWav(normalized, this.targetRate);
+  }
+
+  _stopTracks(stream) {
+    if (!stream) return;
+    try {
+      for (const track of stream.getTracks()) {
+        try { track.stop(); } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  _cleanupSession(session) {
+    if (session.cleanupPromise) return session.cleanupPromise;
+    const { source, processor, stream, audioContext } = session;
+    session.source = session.processor = session.stream = session.audioContext = null;
+    if (this._session === session) {
+      this.source = this.processor = this.stream = this.audioContext = null;
+      this.recording = false;
+    }
+    session.cleanupPromise = (async () => {
+      try { if (source) source.disconnect(); } catch (_) {}
+      try { if (processor) processor.disconnect(); } catch (_) {}
+      if (processor) {
+        processor.port.onmessage = null;
+        processor.onprocessorerror = null;
+        try { processor.port.close(); } catch (_) {}
+      }
+      this._stopTracks(stream);
+      let timer;
+      try {
+        if (audioContext) {
+          await Promise.race([
+            audioContext.close(),
+            new Promise((resolve) => { timer = setTimeout(resolve, AUDIO_CLOSE_TIMEOUT_MS); })
+          ]);
+        }
+      } catch (_) {
+        // 麥克風 tracks 已停止；關閉失敗不應阻塞下一次錄音。
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    })();
+    return session.cleanupPromise;
   }
 
   // 線性插值重新採樣

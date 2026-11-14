@@ -1,8 +1,9 @@
 // 設定持久化：儲存到 userData/config.json
-// API Key 記憶體中保持明文（供 ASRClient 與設定介面使用），落盤時以 OS keychain 加密
+// API Key 記憶體中保持明文；落盤時優先使用系統加密服務。
 const { app, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { randomBytes } = require('crypto');
 const logger = require('./logger');
 
 const DEFAULTS = {
@@ -20,13 +21,15 @@ const DEFAULTS = {
 class SettingsStore {
   constructor() {
     this.filePath = path.join(app.getPath('userData'), 'config.json');
+    this.encryptedKey = null;
+    this.decryptionFailed = false;
+    this.plaintextKeyOnDisk = false;
     const loaded = this._load();
     this.settings = loaded.settings;
 
     // 舊設定檔的明文 key：首次載入後立即加密遷移
     if (loaded.plaintextKey) {
-      this._save();
-      logger.info('API Key 已遷移為加密儲存');
+      if (this._save() && this.encryptedKey) logger.info('API Key 已遷移為加密儲存');
     }
   }
 
@@ -51,12 +54,15 @@ class SettingsStore {
     }
 
     const settings = { ...DEFAULTS, ...parsed };
+    this.plaintextKeyOnDisk = typeof parsed.apiKey === 'string' && !!parsed.apiKey;
 
     if (parsed.apiKey && typeof parsed.apiKey === 'object' && parsed.apiKey.encrypted) {
+      this.encryptedKey = parsed.apiKey;
       try {
         settings.apiKey = safeStorage.decryptString(Buffer.from(parsed.apiKey.value, 'base64'));
       } catch (error) {
         logger.error('API Key 解密失敗，需重新輸入', { message: error.message });
+        this.decryptionFailed = true;
         settings.apiKey = '';
       }
       return { settings, plaintextKey: false };
@@ -72,16 +78,38 @@ class SettingsStore {
     return { settings, plaintextKey: true };
   }
 
-  _save() {
+  _save(settings = this.settings, { clearEncryptedKey = false } = {}) {
+    let tempPath;
     try {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-      const out = { ...this.settings };
-      if (this._encryptionAvailable() && out.apiKey) {
-        out.apiKey = { encrypted: true, value: safeStorage.encryptString(out.apiKey).toString('base64') };
+      const out = { ...settings };
+      if (this.decryptionFailed && !out.apiKey && clearEncryptedKey !== true) {
+        // 解密失敗時，只有明確要求清除或輸入新金鑰才可取代舊密文。
+        out.apiKey = this.encryptedKey;
+      } else if (out.apiKey) {
+        if (this._encryptionAvailable()) {
+          out.apiKey = { encrypted: true, value: safeStorage.encryptString(out.apiKey).toString('base64') };
+        } else if (this.encryptedKey) {
+          if (out.apiKey !== this.settings.apiKey) throw new Error('系統加密不可用，無法安全儲存新 API Key');
+          out.apiKey = this.encryptedKey;
+        } else {
+          logger.error('系統加密不可用，API Key 將以明文儲存');
+        }
       }
-      fs.writeFileSync(this.filePath, JSON.stringify(out, null, 2));
+      // 先寫同目錄暫存檔再替換，避免中斷或寫入失敗時截斷原設定檔。
+      tempPath = path.join(path.dirname(this.filePath), `.config-${randomBytes(8).toString('hex')}.tmp`);
+      fs.writeFileSync(tempPath, JSON.stringify(out, null, 2), { flag: 'wx', mode: 0o600 });
+      fs.renameSync(tempPath, this.filePath);
+      this.encryptedKey = out.apiKey && typeof out.apiKey === 'object' ? out.apiKey : null;
+      this.plaintextKeyOnDisk = typeof out.apiKey === 'string' && !!out.apiKey;
+      if (settings.apiKey || clearEncryptedKey === true) this.decryptionFailed = false;
+      return true;
     } catch (error) {
+      if (tempPath) {
+        try { fs.unlinkSync(tempPath); } catch (_) {}
+      }
       logger.error('儲存設定失敗', { message: error.message });
+      return false;
     }
   }
 
@@ -90,17 +118,41 @@ class SettingsStore {
   }
 
   set(key, value) {
-    this.settings[key] = value;
-    this._save();
+    return this.setAll({ [key]: value });
   }
 
   getAll() {
     return { ...this.settings };
   }
 
-  setAll(settings) {
-    this.settings = { ...this.settings, ...settings };
-    this._save();
+  getSecurityStatus() {
+    const available = this._encryptionAvailable();
+    let warning = '';
+    if (this.plaintextKeyOnDisk) {
+      warning = (available ? '' : '系統加密服務不可用，') + 'API Key 目前以明文儲存在本機設定檔中。';
+    } else if (!available && !this.encryptedKey) {
+      warning = '系統加密服務不可用，API Key 將以明文儲存在本機設定檔中。';
+    }
+    if (process.platform === 'linux' && typeof safeStorage.getSelectedStorageBackend === 'function') {
+      try {
+        if (safeStorage.getSelectedStorageBackend() === 'basic_text') {
+          warning += ' Linux basic_text 模式未受系統金鑰鏈保護。';
+        }
+      } catch (error) {
+        logger.error('檢查系統金鑰儲存服務失敗', { message: error.message });
+      }
+    }
+    return {
+      decryptionFailed: this.decryptionFailed,
+      warning: warning.trim()
+    };
+  }
+
+  setAll(settings, { clearEncryptedKey = false } = {}) {
+    const updated = { ...this.settings, ...settings };
+    if (!this._save(updated, { clearEncryptedKey })) return false;
+    this.settings = updated;
+    return true;
   }
 }
 
